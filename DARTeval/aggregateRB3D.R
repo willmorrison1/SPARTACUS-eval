@@ -8,7 +8,10 @@ library(QOLfunctions)
 library(DBI)
 library(gganimate)
 library(tools)
+library(xml2)
+library(stringr)
 
+#####edit these#####
 plotDir <- "C:/Users/micromet/Desktop/"
 dartSimulationDir <- "V:/Tier_processing/hv867657/DART_5-7-5_1126/user_data/simulations"
 #the DEM that is exactly centered on the DART simulation domain.
@@ -30,6 +33,8 @@ DARTmodelElevationParam <- 5
 #the "typeNums" in DART - and what they should refer to in real terms e.g. 103_TypeNum = "Wall".
 typeNumsAll <- c(     "",     paste0(c("103", "104",  "105",  "106",  "107",  "108",    "109"), "_TypeNum"))
 typeNumsAll_labs <- c("Unclassified", "Wall", "Wall", "Wall", "Roof", "Wall", "Ground", "Wall")
+#####edit these#####
+
 
 #convert raw dart type numbers to a labelled factor
 typeNumConvert <- function(x) {
@@ -43,7 +48,7 @@ setwd(dartSimBaseDir)
 con <- dbConnect(RSQLite::SQLite(), dbname = paste0(dartBaseSimName, "_JTT.db"))
 dbDF <- dbReadTable(con, dartBaseSimName)
 simDir <- gsub(" ", "", dbDF$scriptDirectory[dbDF$exitStatus == 0])
-#hack if usign windows mounted drive
+#hack if using windows mounted drive
 simDir <- gsub("/storage/basic/micromet/", "V:/", simDir)
 message(paste("Numbers of unfinished sims:", length(which(dbDF$exitStatus != 0))))
 
