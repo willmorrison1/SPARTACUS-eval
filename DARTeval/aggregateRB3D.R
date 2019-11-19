@@ -7,6 +7,7 @@ library(doParallel)
 library(QOLfunctions)
 library(DBI)
 library(gganimate)
+library(tools)
 
 plotDir <- "C:/Users/micromet/Desktop/"
 dartSimulationDir <- "V:/Tier_processing/hv867657/DART_5-7-5_1126/user_data/simulations"
@@ -122,6 +123,9 @@ ggsave(filename = plotName, plot = pltOut,
 
 toSave <- zStats_params_groupedAzimuth %>%
   dplyr::rename(SZA = parametre4, albedo = parametre11)
-textName <- file.path(plotDir, paste0(sequenceID, jYHHMMSS(), ".txt"))
+textFileName <- file.path(plotDir, paste0(sequenceID, jYHHMMSS(), ".txt"))
 
-write.table(toSave, textName, sep = ",", row.names = FALSE)
+write.table(x = toSave, file = textFileName, sep = ",", row.names = FALSE)
+zipF <- paste0(file_path_sans_ext(textFileName), ".zip")
+zip(zipfile = zipF, files = textFileName)
+unlink(textFileName)
