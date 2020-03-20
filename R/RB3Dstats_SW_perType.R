@@ -92,7 +92,7 @@ for (i in 1:length(simDir)) {
                                maxUndergroundCells = maxUndergroundCellsVal,
                                fun = DEMaggregateFun)
       
-      zStatsList[[iterNo]] <- as.data.frame(d1) %>%
+      zStatsList[[iterNo]] <- d1@data %>%
         dplyr::ungroup() %>%
         dplyr::mutate(typeNum_raw = typeNum) %>%
         dplyr::mutate(typeNum = typeNumConvert(typeNum)) %>%
