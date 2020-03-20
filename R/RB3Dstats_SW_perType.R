@@ -6,18 +6,25 @@ library(raster)
 library(doParallel)
 library(QOLfunctions)
 library(DBI)
-library(gganimate)
-library(tools)
-library(xml2)
-library(stringr)
 
-#####edit these#####
-plotDir <- "C:/Users/micromet/Desktop/"
-dartSimulationDir <- "V:/Tier_processing/hv867657/DART_5-7-5_1126/user_data/simulations"
+isLocalWindows <- .Platform$OS.type == "windows"
+
+if (isLocalWindows) {
+  baseProDir <- "V:/"
+} else {
+  baseProDir <- "/storage/basic/micromet/"
+}
+
+
+plotDir <- file.path(baseProDir, "/Tier_processing/hv867657/SPARTACUS/")
+dartSimulationDir <- file.path(baseProDir, "/Tier_processing/hv867657/DART_5-7-5_1126/user_data/simulations")
 #the DEM that is exactly centered on the DART simulation domain.
 DEMfileName <- "D:/gitProjects/GoogleEarthModelCreator/simulations/city2km/out/DEM_merged.tif"
-dartBaseSimName <- "SPARTACUS_SW"
-sequenceID <- "SW_perType"
+DEMfileName <- file.path(plotDir, "DEM_merged.tif")
+dartBaseSimName <- "SPARTACUS_SW"#"SPARTACUS_SW_lowLOD_noOrography"
+daRtinputID <- "SW_perType"#"SW_perType_noOrography"#"SW_perType"
+#what function to use to aggregate DEM?
+DEMaggregateFun <- function(x, na.rm = na.rm) quantile(x, 0.25)
 ###simulations to read
 iterVals <- c("ILLUDIR", "ITER5")
 variablesRB3DVals <- c("Intercepted", "Scattered",
@@ -25,16 +32,12 @@ variablesRB3DVals <- c("Intercepted", "Scattered",
 #how many cells to keep that are "underground" i.e. how much vertical variation underground
 #(e.g. exposed foundations) should be resolved. relax this parameter at expense of array sizes
 #and memory footprint.
-maxUndergroundCellsVal <- 5
+maxUndergroundCellsVal <- 10
 #max memory to use for raster (before cache to HDD)
 rasterOptions(maxmemory = 1.6e+10)
-#DART parameter: height above ground that was set in DART for the 3D model(s)
-DARTmodelElevationParam <- 5
 #the "typeNums" in DART - and what they should refer to in real terms e.g. 103_TypeNum = "Wall".
 typeNumsAll <- c(     "",     paste0(c("103", "104",  "105",  "106",  "107",  "108",    "109"), "_TypeNum"))
 typeNumsAll_labs <- c("Unclassified", "Wall", "Wall", "Wall", "Roof", "Wall", "Ground", "Wall")
-#####edit these#####
-
 
 #convert raw dart type numbers to a labelled factor
 typeNumConvert <- function(x) {
@@ -43,15 +46,17 @@ typeNumConvert <- function(x) {
          labels = typeNumsAll_labs)
 }
 
-dartSimBaseDir <- file.path(dartSimulationDir, dartBaseSimName, "daRtinput", sequenceID)
+dartSimBaseDir <- file.path(dartSimulationDir, dartBaseSimName, "daRtinput", daRtinputID)
 setwd(dartSimBaseDir)
 con <- dbConnect(RSQLite::SQLite(), dbname = paste0(dartBaseSimName, "_JTT.db"))
 dbDF <- dbReadTable(con, dartBaseSimName)
 simDir <- gsub(" ", "", dbDF$scriptDirectory[dbDF$exitStatus == 0])
-#hack if using windows mounted drive
-simDir <- gsub("/storage/basic/micromet/", "V:/", simDir)
-message(paste("Numbers of unfinished sims:", length(which(dbDF$exitStatus != 0))))
 
+if (isLocalWindows) {
+  #hack if using windows mounted drive
+  simDir <- gsub("/storage/basic/micromet/", "V:/", simDir)
+}
+message(paste("Numbers of unfinished sims:", length(which(dbDF$exitStatus != 0))))
 DEM <- raster::raster(x = DEMfileName)
 zStatsList <- list()
 
@@ -62,8 +67,8 @@ sF_all <- daRt::simulationFilter(
   variablesRB3D = variablesRB3DVals,
   typeNums = typeNumsAll)
 
-
 allFiles <- daRt::getFiles(simDir, sF = sF_all)
+
 daRt::deleteFiles(x = allFiles, trianglesInput = TRUE, maketOutput = TRUE, #trianglesOutput = TRUE,
                   deleteSimulationFiles = FALSE)
 seqParams <- daRt::sequenceParameters(allFiles)
@@ -77,19 +82,24 @@ for (i in 1:length(simDir)) {
     variablesRB3D = variablesRB3DVals,
     bands = 0L,
     typeNums = typeNumsAll)
-  d <- daRt::getData(x = simDir[i], sF = sF, nCores = 4)
+  d <- daRt::getData(x = simDir[i], sF = sF, nCores = 1)
   d1 <- daRt::rb3DtoNc(x = d)
   rm(d); gc()
-  d1 <- daRt::removeRelief(x = d1, DEM = DEM, DARTmodelElevation = DARTmodelElevationParam,
-                           maxUndergroundCells = maxUndergroundCellsVal)
+
+  d1 <- daRt::removeRelief(x = d1, DEM = DEM,
+                           maxUndergroundCells = maxUndergroundCellsVal,
+                           fun = DEMaggregateFun)
+
   zStatsList[[iterNo]] <- as.data.frame(d1) %>%
     dplyr::ungroup() %>%
     dplyr::mutate(typeNum_raw = typeNum) %>%
     dplyr::mutate(typeNum = typeNumConvert(typeNum)) %>%
     dplyr::group_by(Z, variableRB3D, band, iter, typeNum, simName) %>%
     dplyr::summarise(nTypeNos = length(unique(typeNum_raw)),
-                     #as the sample sizes are the same, the below equates to the mean of the sum
-                     #of any grouped typeNos
+                     #merge values for sub-groups into values for final groups, as per typeNumConvert().
+                     #e.g. sub groups of north, , etc.. walls are merged to give one value for "Walls" group.
+                     #as the sub-group sample sizes are the same, the below equates to the mean of the sum
+                     #of any grouped values
                      meanVal = mean(value) * nTypeNos)
   iterNo <- iterNo + 1
 }
@@ -122,15 +132,13 @@ pltOut <- ggplot(zStats_params_groupedAzimuth) +
   scale_fill_brewer(palette = 3, type = "qual") +
   scale_color_brewer(palette = 3, type = "qual")
 
-plotName <- file.path(plotDir, paste0(sequenceID, jYHHMMSS(), ".pdf"))
+plotName <- file.path(plotDir, paste0(daRtinputID, jYHHMMSS(), ".pdf"))
 ggsave(filename = plotName, plot = pltOut,
-       height = 24, width = 24)
+       height = 45, width = 45)
 
 toSave <- zStats_params_groupedAzimuth %>%
   dplyr::rename(SZA = parametre4, albedo = parametre11)
-textFileName <- file.path(plotDir, paste0(sequenceID, jYHHMMSS(), ".txt"))
+textName <- file.path(plotDir, paste0(daRtinputID, dartBaseSimName, jYHHMMSS(), ".txt"))
 
-write.table(x = toSave, file = textFileName, sep = ",", row.names = FALSE)
-zipF <- paste0(file_path_sans_ext(textFileName), ".zip")
-zip(zipfile = zipF, files = textFileName)
-unlink(textFileName)
+write.table(toSave, textName, sep = ",", row.names = FALSE)
+
