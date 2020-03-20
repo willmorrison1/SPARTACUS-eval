@@ -75,37 +75,35 @@ seqParams <- daRt::sequenceParameters(allFiles)
 iterNo <- 1 #preallocate a tracker for the iteration(s)
 for (i in 1:length(simDir)) {
   for (v in 1:length(iterVals)) {
-    for (z in 1:length(variablesRB3DVals)) {
-      
-      print(paste(iterNo, "/", length(simDir)))
-      sF <- daRt::simulationFilter(
-        variables = "RADIATIVE_BUDGET",
-        product = "rb3D", iters = iterVals[v],
-        variablesRB3D = variablesRB3DVals[z],
-        bands = 0L,
-        typeNums = typeNumsAll)
-      d <- daRt::getData(x = simDir[i], sF = sF, nCores = 1)
-      d1 <- daRt::rb3DtoNc(x = d)
-      rm(d); gc()
-      
-      d1 <- daRt::removeRelief(x = d1, DEM = DEM,
-                               maxUndergroundCells = maxUndergroundCellsVal,
-                               fun = DEMaggregateFun)
-      
-      zStatsList[[iterNo]] <- d1@data %>%
-        dplyr::ungroup() %>%
-        dplyr::mutate(typeNum_raw = typeNum) %>%
-        dplyr::mutate(typeNum = typeNumConvert(typeNum)) %>%
-        dplyr::group_by(Z, variableRB3D, band, iter, typeNum, simName) %>%
-        dplyr::summarise(nTypeNos = length(unique(typeNum_raw)),
-                         #merge values for sub-groups into values for final groups, as per typeNumConvert().
-                         #e.g. sub groups of north, , etc.. walls are merged to give one value for "Walls" group.
-                         #as the sub-group sample sizes are the same, the below equates to the mean of the sum
-                         #of any grouped values
-                         meanVal = mean(value) * nTypeNos)
-      iterNo <- iterNo + 1
-      
-    }
+    
+    print(paste(iterNo, "/", length(simDir)))
+    sF <- daRt::simulationFilter(
+      variables = "RADIATIVE_BUDGET",
+      product = "rb3D", iters = iterVals[v],
+      variablesRB3D = variablesRB3DVals,
+      bands = 0L,
+      typeNums = typeNumsAll)
+    d <- daRt::getData(x = simDir[i], sF = sF, nCores = 1)
+    d1 <- daRt::rb3DtoNc(x = d)
+    rm(d); gc()
+    
+    d1 <- daRt::removeRelief(x = d1, DEM = DEM,
+                             maxUndergroundCells = maxUndergroundCellsVal,
+                             fun = DEMaggregateFun)
+    
+    zStatsList[[iterNo]] <- d1@data %>%
+      dplyr::ungroup() %>%
+      dplyr::mutate(typeNum_raw = typeNum) %>%
+      dplyr::mutate(typeNum = typeNumConvert(typeNum)) %>%
+      dplyr::group_by(Z, variableRB3D, band, iter, typeNum, simName) %>%
+      dplyr::summarise(nTypeNos = length(unique(typeNum_raw)),
+                       #merge values for sub-groups into values for final groups, as per typeNumConvert().
+                       #e.g. sub groups of north, , etc.. walls are merged to give one value for "Walls" group.
+                       #as the sub-group sample sizes are the same, the below equates to the mean of the sum
+                       #of any grouped values
+                       meanVal = mean(value) * nTypeNos)
+    iterNo <- iterNo + 1
+    
   }
 }
 
